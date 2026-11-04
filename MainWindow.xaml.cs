@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Xml.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
@@ -60,10 +61,25 @@ namespace GpxViewer
                 <div id='map'></div>
                 <script>
                     var map = L.map('map').setView([0, 0], 2);
-                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+
+                    var defaultLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         maxZoom: 19,
-                        attribution: '© OpenStreetMap'
-                    }).addTo(map);
+                        attribution: '© OpenStreetMap contributors'
+                    });
+
+                    var satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                        maxZoom: 19,
+                        attribution: 'Tiles © Esri'
+                    });
+
+                    defaultLayer.addTo(map);
+
+                    var baseLayers = {
+                        'Default': defaultLayer,
+                        'Satellite': satelliteLayer
+                    };
+
+                    L.control.layers(baseLayers, null, { collapsed: false }).addTo(map);
 
                     var routeLayers = {};
                     var selectionLayer = new L.FeatureGroup().addTo(map);
@@ -93,6 +109,7 @@ namespace GpxViewer
                         var bounds = e.layer.getBounds();
                         window.chrome.webview.postMessage({
                             type: 'areaSelected',
+                            source: 'drawSelection',
                             south: bounds.getSouth(),
                             west: bounds.getWest(),
                             north: bounds.getNorth(),
@@ -104,6 +121,7 @@ namespace GpxViewer
                         var bounds = map.getBounds();
                         window.chrome.webview.postMessage({
                             type: 'areaSelected',
+                            source: 'mapWindow',
                             south: bounds.getSouth(),
                             west: bounds.getWest(),
                             north: bounds.getNorth(),
@@ -244,6 +262,16 @@ namespace GpxViewer
 
         private void HandleAreaSelection(JsonElement root)
         {
+            var source = root.TryGetProperty("source", out var sourceElement)
+                ? sourceElement.GetString()
+                : null;
+
+            if (HoldFileListCheckBox.IsChecked == true &&
+                string.Equals(source, "mapWindow", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             if (!root.TryGetProperty("south", out var southElement) ||
                 !root.TryGetProperty("west", out var westElement) ||
                 !root.TryGetProperty("north", out var northElement) ||
@@ -396,6 +424,76 @@ namespace GpxViewer
                 var selectedIdJson = JsonSerializer.Serialize(selected.Id, _jsonOptions);
                 _ = MapWebView.CoreWebView2.ExecuteScriptAsync($"highlightRoute({selectedIdJson});");
             }
+        }
+
+        private void GpxFileListBoxItem_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is ListBoxItem item)
+            {
+                item.IsSelected = true;
+                item.Focus();
+            }
+        }
+
+        private void ViewTotalMiles_Click(object sender, RoutedEventArgs e)
+        {
+            if (GpxFileListBox.SelectedItem is not GpxItem selected)
+            {
+                MessageBox.Show(this, "Select a GPX file first.", "Total Miles", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var miles = CalculateTotalMiles(selected.Points);
+            MessageBox.Show(
+                this,
+                $"{selected.FileName}\nTotal distance: {miles:F2} miles",
+                "Total Miles",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+
+        private static double CalculateTotalMiles(double[][] points)
+        {
+            if (points is null || points.Length < 2)
+            {
+                return 0;
+            }
+
+            var totalMiles = 0d;
+            for (var i = 1; i < points.Length; i++)
+            {
+                var previous = points[i - 1];
+                var current = points[i];
+
+                if (previous is null || current is null || previous.Length < 2 || current.Length < 2)
+                {
+                    continue;
+                }
+
+                totalMiles += CalculateGreatCircleMiles(previous[0], previous[1], current[0], current[1]);
+            }
+
+            return totalMiles;
+        }
+
+        private static double CalculateGreatCircleMiles(double lat1, double lon1, double lat2, double lon2)
+        {
+            const double EarthRadiusMiles = 3958.7613;
+
+            var dLat = ToRadians(lat2 - lat1);
+            var dLon = ToRadians(lon2 - lon1);
+            var lat1Rad = ToRadians(lat1);
+            var lat2Rad = ToRadians(lat2);
+
+            var a = Math.Pow(Math.Sin(dLat / 2), 2) +
+                    Math.Cos(lat1Rad) * Math.Cos(lat2Rad) * Math.Pow(Math.Sin(dLon / 2), 2);
+            var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+            return EarthRadiusMiles * c;
+        }
+
+        private static double ToRadians(double degrees)
+        {
+            return degrees * Math.PI / 180.0;
         }
 
         private double[][] ParseGpxPoints(string filePath)
