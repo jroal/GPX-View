@@ -42,10 +42,32 @@ namespace GpxViewer
 
         private async void InitMap()
         {
-            await MapWebView.EnsureCoreWebView2Async();
-            ConfigureTileRequestHeaders();
-            MapWebView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
-            MapWebView.NavigationCompleted += MapWebView_NavigationCompleted;
+            try
+            {
+                var webViewDataRoot = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "GPX View",
+                    "WebView2");
+
+                Directory.CreateDirectory(webViewDataRoot);
+
+                var primaryEnvironment = await CoreWebView2Environment.CreateAsync(userDataFolder: webViewDataRoot);
+                try
+                {
+                    await MapWebView.EnsureCoreWebView2Async(primaryEnvironment);
+                }
+                catch (System.Runtime.InteropServices.COMException ex) when (ex.HResult == unchecked((int)0x800700AA))
+                {
+                    var recoveryFolder = Path.Combine(webViewDataRoot, $"recovery-{DateTime.UtcNow:yyyyMMddHHmmss}");
+                    Directory.CreateDirectory(recoveryFolder);
+
+                    var recoveryEnvironment = await CoreWebView2Environment.CreateAsync(userDataFolder: recoveryFolder);
+                    await MapWebView.EnsureCoreWebView2Async(recoveryEnvironment);
+                }
+
+                ConfigureTileRequestHeaders();
+                MapWebView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
+                MapWebView.NavigationCompleted += MapWebView_NavigationCompleted;
 
             string html = @"
             <!DOCTYPE html>
@@ -205,7 +227,17 @@ namespace GpxViewer
             </body>
             </html>";
 
-            MapWebView.NavigateToString(html);
+                MapWebView.NavigateToString(html);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this,
+                    $"Map initialization failed.\n\n{ex.Message}",
+                    "Startup Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                Close();
+            }
         }
 
         private void MapWebView_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
@@ -345,25 +377,7 @@ namespace GpxViewer
         private void ConfigureTileRequestHeaders()
         {
             var core = MapWebView.CoreWebView2;
-            core.Settings.UserAgent = "GPX-View/1.0 (Desktop App)";
-            core.AddWebResourceRequestedFilter("https://*.tile.openstreetmap.org/*", CoreWebView2WebResourceContext.Image);
-            core.WebResourceRequested += (_, args) =>
-            {
-                if (!args.Request.Uri.Contains("tile.openstreetmap.org", StringComparison.OrdinalIgnoreCase))
-                {
-                    return;
-                }
-
-                if (!args.Request.Headers.Contains("Referer"))
-                {
-                    args.Request.Headers.SetHeader("Referer", "https://www.openstreetmap.org/");
-                }
-
-                if (!args.Request.Headers.Contains("User-Agent"))
-                {
-                    args.Request.Headers.SetHeader("User-Agent", core.Settings.UserAgent);
-                }
-            };
+            core.Settings.UserAgent = "GPX-View/1.0 (+desktop-webview2)";
         }
 
         private void SelectFolder_Click(object sender, RoutedEventArgs e)
