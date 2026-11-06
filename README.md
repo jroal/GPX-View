@@ -5,3 +5,5 @@ This project is a simple Windows utility to view a folder on the local PC with m
 You can download and run the installer (GPX-View-Setup.exe) from [releases](https://github.com/jroal/GPX-View/releases).
 
 More details and source on Github: [https://github.com/jroal/GPX-View](https://github.com/jroal/GPX-View)
+
+Project website: [https://jroal.github.io/GPX-View/](https://jroal.github.io/GPX-View/)
