@@ -7,3 +7,5 @@ You can download and run the installer (GPX-View-Setup.exe) from [releases](http
 More details and source on Github: [https://github.com/jroal/GPX-View](https://github.com/jroal/GPX-View)
 
 Project website: [https://jroal.github.io/GPX-View/](https://jroal.github.io/GPX-View/)
+
+Video demo: [https://youtu.be/Ul8_T19j_QU](https://youtu.be/Ul8_T19j_QU)
