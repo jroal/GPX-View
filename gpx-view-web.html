@@ -4,7 +4,33 @@
   <meta charset="UTF-8">
   <title>GPX View Web</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="manifest" href="data:application/manifest+json,{%22name%22:%22GPX%20View%20Web%22,%22short_name%22:%22GPXView%22,%22start_url%22:%22./gpx-view-web.html%22,%22display%22:%22standalone%22,%22background_color%22:%22%23ffffff%22,%22theme_color%22:%22%230d6efd%22}">
+  
+  <!-- Dynamic PWA Manifest Script -->
+  <script>
+    const manifestObj = {
+      name: "GPX View Web",
+      short_name: "GPXView",
+      start_url: "./gpx-view-web.html",
+      display: "standalone",
+      background_color: "#ffffff",
+      theme_color: "#0d6efd",
+      icons: [
+        {
+          src: "https://leafletjs.com/docs/images/logo.png",
+          sizes: "192x192",
+          type: "image/png"
+        }
+      ]
+    };
+    const manifestStr = JSON.stringify(manifestObj);
+    const blob = new Blob([manifestStr], { type: 'application/json' });
+    const manifestUrl = URL.createObjectURL(blob);
+    const link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = manifestUrl;
+    document.head.appendChild(link);
+  </script>
+
   <style>
     body { margin: 0; padding: 0; display: flex; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
     #sidebar { width: 340px; border-right: 1px solid #ccc; display: flex; flex-direction: column; background: #fff; z-index: 1000; }
@@ -22,17 +48,6 @@
     #file-list li.active-file .color-swatch { border-color: #fff; }
     #map { flex: 1; height: 100%; }
   </style>
-<!-- Place inside <head> of gpx-view-web.html -->
-<link rel="manifest" href="data:application/manifest+json,{
-  %22name%22:%22GPX%20View%20Web%22,
-  %22short_name%22:%22GPXView%22,
-  %22start_url%22:%22./gpx-view-web.html%22,
-  %22display%22:%22standalone%22,
-  %22background_color%22:%22%23ffffff%22,
-  %22theme_color%22:%22%230d6efd%22,
-  %22icons%22:[{%22src%22:%22https://leafletjs.com/docs/images/logo.png%22,%22sizes%22:%22192x192%22,%22type%22:%22image/png%22}]
-}">
-  
 </head>
 <body>
 
@@ -51,7 +66,19 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-  // 1. Map Setup & Tile Layers
+  // 1. Service Worker Registration for PWA Compliance
+  if ('serviceWorker' in navigator) {
+    const swCode = `
+      self.addEventListener('install', e => e.waitUntil(self.skipWaiting()));
+      self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+      self.addEventListener('fetch', e => e.respondWith(fetch(e.request)));
+    `;
+    const blob = new Blob([swCode], { type: 'application/javascript' });
+    const swUrl = URL.createObjectURL(blob);
+    navigator.serviceWorker.register(swUrl).catch(err => console.log('SW setup info:', err));
+  }
+
+  // 2. Map Setup & Tile Layers
   const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '© OpenStreetMap'
@@ -77,17 +104,16 @@
   const fileCache = [];
   const activeLayersGroup = L.layerGroup().addTo(map);
   let isFrozen = false;
-  let selectedItem = null; // Tracks currently active track object
+  let selectedItem = null;
 
-  // 2. Distinct Color Generator
+  // 3. Distinct Color Generator
   function generateColor(index, total) {
     const hue = Math.floor((index * (360 / Math.max(total, 1))) % 360);
     return `hsl(${hue}, 85%, 45%)`;
   }
 
-  // 3. Highlight Logic (Selects track on map or list)
+  // 4. Highlight Track Logic
   function selectTrack(item) {
-    // Reset previously selected track style
     if (selectedItem) {
       selectedItem.polyline.setStyle({ weight: 3, opacity: 0.85 });
       if (selectedItem.listEl) {
@@ -98,11 +124,9 @@
     selectedItem = item;
 
     if (item) {
-      // Highlight polyline on map
       item.polyline.setStyle({ weight: 6, opacity: 1.0 });
       item.polyline.bringToFront();
 
-      // Highlight sidebar entry & scroll into view
       if (item.listEl) {
         item.listEl.classList.add('active-file');
         item.listEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -110,10 +134,9 @@
     }
   }
 
-  // Click empty map area to clear selection
   map.on('click', () => selectTrack(null));
 
-  // 4. Freeze Button Handler
+  // 5. Freeze Button Handler
   const freezeBtn = document.getElementById('btn-freeze');
   freezeBtn.addEventListener('click', () => {
     isFrozen = !isFrozen;
@@ -127,7 +150,7 @@
     }
   });
 
-  // 5. Folder Picker Handler
+  // 6. Folder Picker Handler
   document.getElementById('btn-select').addEventListener('click', async () => {
     try {
       const dirHandle = await window.showDirectoryPicker();
@@ -163,7 +186,7 @@
     }
   });
 
-  // 6. Index GPX & Register Map Line Click Handler
+  // 7. Index GPX & Polyline Setup
   async function indexGpxFile(fileHandle, color) {
     const file = await fileHandle.getFile();
     const text = await file.text();
@@ -198,16 +221,15 @@
       listEl: null
     };
 
-    // Map Route Click Event: Highlights list item & thickens route
     polyline.on('click', (e) => {
-      L.DomEvent.stopPropagation(e); // Stop map click event from clearing selection
+      L.DomEvent.stopPropagation(e);
       selectTrack(item);
     });
 
     fileCache.push(item);
   }
 
-  // 7. Viewport Filter & Dynamic List Rendering
+  // 8. Viewport Filtering
   function updateVisibleTracks() {
     if (isFrozen) return;
 
@@ -244,15 +266,12 @@
         li.appendChild(swatch);
         li.appendChild(nameSpan);
         
-        // Store element reference on track item
         item.listEl = li;
 
-        // Restore highlight styling if this was already selected
         if (selectedItem === item) {
           li.classList.add('active-file');
         }
 
-        // List Item Click Event: Selects track & zooms to line bounds
         li.onclick = (e) => {
           e.stopPropagation();
           selectTrack(item);
