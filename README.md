@@ -9,3 +9,5 @@ More details and source on Github: [https://github.com/jroal/GPX-View](https://g
 Project website: [https://jroal.github.io/GPX-View/](https://jroal.github.io/GPX-View/)
 
 Video demo: [https://youtu.be/Ul8_T19j_QU](https://youtu.be/Ul8_T19j_QU)
+
+If you don't have a Windows PC, or you just prefer a simple web app, use this web version: https://jroal.github.io/GPX-View/gpx-view-web.html
