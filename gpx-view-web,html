@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>GPX View Web</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { margin: 0; padding: 0; display: flex; height: 100vh; font-family: sans-serif; }
+    #sidebar { width: 320px; border-right: 1px solid #ccc; display: flex; flex-direction: column; }
+    #controls { padding: 12px; background: #f8f9fa; border-bottom: 1px solid #ddd; }
+    #file-list { flex: 1; overflow-y: auto; list-style: none; margin: 0; padding: 0; }
+    #file-list li { padding: 8px 12px; border-bottom: 1px solid #eee; font-size: 13px; }
+    #map { flex: 1; height: 100%; }
+    button { padding: 8px 14px; font-weight: bold; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div id="controls">
+    <button id="btn-select">Select Folder</button>
+    <div id="status" style="margin-top: 8px; font-size: 12px; color: #666;">No folder loaded</div>
+  </div>
+  <ul id="file-list"></ul>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  // 1. Initialize Map
+  const map = L.map('map').setView([36.1699, -115.1398], 10);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© OpenStreetMap'
+  }).addTo(map);
+
+  const fileCache = []; // Stores { handle, name, bbox: [minLat, minLng, maxLat, maxLng], layer: L.Polyline }
+  const activeLayersGroup = L.layerGroup().addTo(map);
+
+  // 2. Handle Folder Access
+  document.getElementById('btn-select').addEventListener('click', async () => {
+    try {
+      const dirHandle = await window.showDirectoryPicker();
+      document.getElementById('status').innerText = 'Indexing folder...';
+      fileCache.length = 0;
+      activeLayersGroup.clearLayers();
+
+      // Scan directory recursively or flat
+      for await (const entry of dirHandle.values()) {
+        if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.gpx')) {
+          await indexGpxFile(entry);
+        }
+      }
+
+      document.getElementById('status').innerText = `Indexed ${fileCache.length} GPX files`;
+      updateVisibleTracks();
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error(err);
+        alert('Directory access failed or not supported in this browser.');
+      }
+    }
+  });
+
+  // 3. Fast Indexer: Parse metadata & coordinates
+  async function indexGpxFile(fileHandle) {
+    const file = await fileHandle.getFile();
+    const text = await file.text();
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(text, 'text/xml');
+    
+    const trkptNodes = xml.querySelectorAll('trkpt');
+    if (trkptNodes.length === 0) return;
+
+    let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    const latLngs = [];
+
+    for (let i = 0; i < trkptNodes.length; i++) {
+      const lat = parseFloat(trkptNodes[i].getAttribute('lat'));
+      const lng = parseFloat(trkptNodes[i].getAttribute('lon'));
+      
+      latLngs.push([lat, lng]);
+
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+    }
+
+    fileCache.push({
+      name: fileHandle.name,
+      bbox: { minLat, minLng, maxLat, maxLng },
+      polyline: L.polyline(latLngs, { color: '#0066cc', weight: 3 })
+    });
+  }
+
+  // 4. Viewport Filter: Match track bounding box to map view bounds
+  function updateVisibleTracks() {
+    const bounds = map.getBounds();
+    const mapMinLat = bounds.getSouth();
+    const mapMaxLat = bounds.getNorth();
+    const mapMinLng = bounds.getWest();
+    const mapMaxLng = bounds.getEast();
+
+    activeLayersGroup.clearLayers();
+    const listEl = document.getElementById('file-list');
+    listEl.innerHTML = '';
+
+    let visibleCount = 0;
+
+    fileCache.forEach(item => {
+      // Check Bounding Box Intersection
+      const isVisible = !(
+        item.bbox.maxLat < mapMinLat ||
+        item.bbox.minLat > mapMaxLat ||
+        item.bbox.maxLng < mapMinLng ||
+        item.bbox.minLng > mapMaxLng
+      );
+
+      if (isVisible) {
+        visibleCount++;
+        activeLayersGroup.addLayer(item.polyline);
+
+        const li = document.createElement('li');
+        li.innerText = item.name;
+        li.onclick = () => map.fitBounds(item.polyline.getBounds());
+        listEl.appendChild(li);
+      }
+    });
+  }
+
+  // 5. Trigger filter on map movement
+  map.on('moveend', updateVisibleTracks);
+</script>
+
+</body>
+</html>
