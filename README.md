@@ -10,4 +10,4 @@ Project website: [https://jroal.github.io/GPX-View/](https://jroal.github.io/GPX
 
 Video demo: [https://youtu.be/Ul8_T19j_QU](https://youtu.be/Ul8_T19j_QU)
 
-If you don't have a Windows PC, or you just prefer a simple web app, use this web version: https://jroal.github.io/GPX-View/gpx-view-web.html
+If you don't have a Windows PC, or you just prefer a simple web app, use this web version: [https://jroal.github.io/GPX-View/gpx-view-web.html](https://jroal.github.io/GPX-View/gpx-view-web.html)
