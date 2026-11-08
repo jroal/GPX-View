@@ -5,47 +5,30 @@
   <title>GPX View Web</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   
-  <!-- Dynamic PWA Manifest Script -->
-  <script>
-    const manifestObj = {
-      name: "GPX View Web",
-      short_name: "GPXView",
-      start_url: "./gpx-view-web.html",
-      display: "standalone",
-      background_color: "#ffffff",
-      theme_color: "#0d6efd",
-      icons: [
-        {
-          src: "https://leafletjs.com/docs/images/logo.png",
-          sizes: "192x192",
-          type: "image/png"
-        }
-      ]
-    };
-    const manifestStr = JSON.stringify(manifestObj);
-    const blob = new Blob([manifestStr], { type: 'application/json' });
-    const manifestUrl = URL.createObjectURL(blob);
-    const link = document.createElement('link');
-    link.rel = 'manifest';
-    link.href = manifestUrl;
-    document.head.appendChild(link);
-  </script>
+  <!-- Standard PWA Manifest Link -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0d6efd">
 
   <style>
     body { margin: 0; padding: 0; display: flex; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
-    #sidebar { width: 340px; border-right: 1px solid #ccc; display: flex; flex-direction: column; background: #fff; z-index: 1000; }
+    #sidebar { width: 350px; border-right: 1px solid #ccc; display: flex; flex-direction: column; background: #fff; z-index: 1000; }
     #controls { padding: 12px; background: #f8f9fa; border-bottom: 1px solid #ddd; }
     .btn-row { display: flex; gap: 8px; margin-bottom: 8px; }
     button { flex: 1; padding: 8px 12px; font-weight: 600; font-size: 13px; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: #fff; }
     button:hover { background: #e9ecef; }
     button.active { background: #0d6efd; color: white; border-color: #0d6efd; }
+    #btn-install { background: #198754; color: white; border-color: #198754; display: none; }
+    #btn-install:hover { background: #157347; }
     #status { font-size: 12px; color: #666; margin-top: 4px; }
     #file-list { flex: 1; overflow-y: auto; list-style: none; margin: 0; padding: 0; }
-    #file-list li { padding: 8px 12px; border-bottom: 1px solid #eee; font-size: 13px; display: flex; align-items: center; gap: 8px; cursor: pointer; transition: background 0.15s ease; }
+    #file-list li { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 13px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; transition: background 0.15s ease; }
     #file-list li:hover { background: #f1f3f5; }
-    #file-list li.active-file { background: #0d6efd; color: white; font-weight: 600; }
+    #file-list li.active-file { background: #0d6efd; color: white; }
+    .file-header { display: flex; align-items: center; gap: 8px; font-weight: 500; }
     .color-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.2); }
     #file-list li.active-file .color-swatch { border-color: #fff; }
+    .track-details { font-size: 11px; margin-top: 4px; padding-top: 6px; border-top: 1px dashed rgba(0,0,0,0.15); display: flex; flex-direction: column; gap: 2px; }
+    #file-list li.active-file .track-details { border-top-color: rgba(255,255,255,0.3); opacity: 0.95; }
     #map { flex: 1; height: 100%; }
   </style>
 </head>
@@ -57,6 +40,9 @@
       <button id="btn-select">Select Folder</button>
       <button id="btn-freeze" disabled>Freeze View</button>
     </div>
+    <div class="btn-row">
+      <button id="btn-install">⚡ Install App</button>
+    </div>
     <div id="status">No folder loaded</div>
   </div>
   <ul id="file-list"></ul>
@@ -66,17 +52,39 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-  // 1. Service Worker Registration for PWA Compliance
+  // 1. Register Physical Service Worker & Handle Install Prompt
+  let deferredPrompt;
+  const installBtn = document.getElementById('btn-install');
+
   if ('serviceWorker' in navigator) {
-    const swCode = `
-      self.addEventListener('install', e => e.waitUntil(self.skipWaiting()));
-      self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
-      self.addEventListener('fetch', e => e.respondWith(fetch(e.request)));
-    `;
-    const blob = new Blob([swCode], { type: 'application/javascript' });
-    const swUrl = URL.createObjectURL(blob);
-    navigator.serviceWorker.register(swUrl).catch(err => console.log('SW setup info:', err));
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => console.log('Service Worker registered successfully.'))
+        .catch(err => console.error('Service Worker registration failed:', err));
+    });
   }
+
+  // Intercept the native install prompt and surface the "Install App" button
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    installBtn.style.display = 'block';
+  });
+
+  installBtn.addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      installBtn.style.display = 'none';
+    }
+    deferredPrompt = null;
+  });
+
+  window.addEventListener('appinstalled', () => {
+    installBtn.style.display = 'none';
+    console.log('GPX View Web was installed');
+  });
 
   // 2. Map Setup & Tile Layers
   const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -106,18 +114,44 @@
   let isFrozen = false;
   let selectedItem = null;
 
-  // 3. Distinct Color Generator
+  // 3. Distance & Time Calculations
+  function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
+    const R = 3958.8; // Miles
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  function formatDuration(seconds) {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    const parts = [];
+    if (hrs > 0) parts.push(`${hrs}h`);
+    if (mins > 0 || hrs > 0) parts.push(`${mins}m`);
+    parts.push(`${secs}s`);
+    return parts.join(' ');
+  }
+
+  // 4. Color Generator
   function generateColor(index, total) {
     const hue = Math.floor((index * (360 / Math.max(total, 1))) % 360);
     return `hsl(${hue}, 85%, 45%)`;
   }
 
-  // 4. Highlight Track Logic
+  // 5. Highlight Track Logic
   function selectTrack(item) {
     if (selectedItem) {
       selectedItem.polyline.setStyle({ weight: 3, opacity: 0.85 });
       if (selectedItem.listEl) {
         selectedItem.listEl.classList.remove('active-file');
+        const detailsBox = selectedItem.listEl.querySelector('.track-details');
+        if (detailsBox) detailsBox.remove();
       }
     }
 
@@ -129,6 +163,15 @@
 
       if (item.listEl) {
         item.listEl.classList.add('active-file');
+        
+        const detailsEl = document.createElement('div');
+        detailsEl.className = 'track-details';
+        detailsEl.innerHTML = `
+          <div><b>Start:</b> ${item.meta.startTime}</div>
+          <div><b>Distance:</b> ${item.meta.distance}</div>
+          <div><b>Duration:</b> ${item.meta.duration}</div>
+        `;
+        item.listEl.appendChild(detailsEl);
         item.listEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     }
@@ -136,7 +179,7 @@
 
   map.on('click', () => selectTrack(null));
 
-  // 5. Freeze Button Handler
+  // 6. Freeze Button Handler
   const freezeBtn = document.getElementById('btn-freeze');
   freezeBtn.addEventListener('click', () => {
     isFrozen = !isFrozen;
@@ -150,7 +193,7 @@
     }
   });
 
-  // 6. Folder Picker Handler
+  // 7. Folder Picker Handler
   document.getElementById('btn-select').addEventListener('click', async () => {
     try {
       const dirHandle = await window.showDirectoryPicker();
@@ -186,7 +229,7 @@
     }
   });
 
-  // 7. Index GPX & Polyline Setup
+  // 8. Index GPX & Parse Telemetry
   async function indexGpxFile(fileHandle, color) {
     const file = await fileHandle.getFile();
     const text = await file.text();
@@ -198,17 +241,44 @@
 
     let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
     const latLngs = [];
+    let totalDistMiles = 0;
+
+    let firstTime = null;
+    let lastTime = null;
 
     for (let i = 0; i < trkptNodes.length; i++) {
       const lat = parseFloat(trkptNodes[i].getAttribute('lat'));
       const lng = parseFloat(trkptNodes[i].getAttribute('lon'));
-      
       latLngs.push([lat, lng]);
 
       if (lat < minLat) minLat = lat;
       if (lat > maxLat) maxLat = lat;
       if (lng < minLng) minLng = lng;
       if (lng > maxLng) maxLng = lng;
+
+      if (i > 0) {
+        const prevLat = latLngs[i - 1][0];
+        const prevLng = latLngs[i - 1][1];
+        totalDistMiles += calculateHaversineDistance(prevLat, prevLng, lat, lng);
+      }
+
+      const timeNode = trkptNodes[i].querySelector('time');
+      if (timeNode && timeNode.textContent) {
+        const t = new Date(timeNode.textContent.trim());
+        if (!isNaN(t.getTime())) {
+          if (!firstTime) firstTime = t;
+          lastTime = t;
+        }
+      }
+    }
+
+    const distanceStr = totalDistMiles > 0 ? `${totalDistMiles.toFixed(2)} mi` : "not available";
+    const startTimeStr = firstTime ? firstTime.toLocaleString() : "not available";
+    let durationStr = "not available";
+
+    if (firstTime && lastTime && lastTime >= firstTime) {
+      const elapsedSeconds = (lastTime.getTime() - firstTime.getTime()) / 1000;
+      durationStr = formatDuration(elapsedSeconds);
     }
 
     const polyline = L.polyline(latLngs, { color: color, weight: 3, opacity: 0.85 });
@@ -218,6 +288,11 @@
       color: color,
       bbox: { minLat, minLng, maxLat, maxLng },
       polyline: polyline,
+      meta: {
+        distance: distanceStr,
+        startTime: startTimeStr,
+        duration: durationStr
+      },
       listEl: null
     };
 
@@ -229,7 +304,7 @@
     fileCache.push(item);
   }
 
-  // 8. Viewport Filtering
+  // 9. Viewport Filtering
   function updateVisibleTracks() {
     if (isFrozen) return;
 
@@ -256,6 +331,9 @@
 
         const li = document.createElement('li');
         
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'file-header';
+
         const swatch = document.createElement('span');
         swatch.className = 'color-swatch';
         swatch.style.backgroundColor = item.color;
@@ -263,13 +341,22 @@
         const nameSpan = document.createElement('span');
         nameSpan.innerText = item.name;
 
-        li.appendChild(swatch);
-        li.appendChild(nameSpan);
-        
+        headerDiv.appendChild(swatch);
+        headerDiv.appendChild(nameSpan);
+        li.appendChild(headerDiv);
+
         item.listEl = li;
 
         if (selectedItem === item) {
           li.classList.add('active-file');
+          const detailsEl = document.createElement('div');
+          detailsEl.className = 'track-details';
+          detailsEl.innerHTML = `
+            <div><b>Start:</b> ${item.meta.startTime}</div>
+            <div><b>Distance:</b> ${item.meta.distance}</div>
+            <div><b>Duration:</b> ${item.meta.duration}</div>
+          `;
+          li.appendChild(detailsEl);
         }
 
         li.onclick = (e) => {
