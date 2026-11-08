@@ -64,4 +64,143 @@
 
   // App State
   const fileCache = [];
-  const activeLayersGroup = L.layer
+  const activeLayersGroup = L.layerGroup().addTo(map);
+  let isFrozen = false;
+
+  // 3. Color Generator: Distributes distinct hues evenly across indexed files
+  function generateColor(index, total) {
+    const hue = Math.floor((index * (360 / Math.max(total, 1))) % 360);
+    return `hsl(${hue}, 85%, 45%)`;
+  }
+
+  // 4. Freeze Toggle Button Handler
+  const freezeBtn = document.getElementById('btn-freeze');
+  freezeBtn.addEventListener('click', () => {
+    isFrozen = !isFrozen;
+    if (isFrozen) {
+      freezeBtn.classList.add('active');
+      freezeBtn.innerText = 'Unfreeze View';
+    } else {
+      freezeBtn.classList.remove('active');
+      freezeBtn.innerText = 'Freeze View';
+      updateVisibleTracks(); // Instantly sync map bounds on unfreeze
+    }
+  });
+
+  // 5. Folder Picker Handler
+  document.getElementById('btn-select').addEventListener('click', async () => {
+    try {
+      const dirHandle = await window.showDirectoryPicker();
+      document.getElementById('status').innerText = 'Indexing folder...';
+      fileCache.length = 0;
+      activeLayersGroup.clearLayers();
+      isFrozen = false;
+      freezeBtn.classList.remove('active');
+      freezeBtn.innerText = 'Freeze View';
+
+      const entries = [];
+      for await (const entry of dirHandle.values()) {
+        if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.gpx')) {
+          entries.push(entry);
+        }
+      }
+
+      const totalFiles = entries.length;
+      for (let i = 0; i < totalFiles; i++) {
+        const color = generateColor(i, totalFiles);
+        await indexGpxFile(entries[i], color);
+      }
+
+      document.getElementById('status').innerText = `Indexed ${fileCache.length} GPX files`;
+      freezeBtn.disabled = fileCache.length === 0;
+      updateVisibleTracks();
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error(err);
+        alert('Directory access failed or not supported in this browser.');
+      }
+    }
+  });
+
+  // 6. Index GPX file & store Polyline with unique color
+  async function indexGpxFile(fileHandle, color) {
+    const file = await fileHandle.getFile();
+    const text = await file.text();
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(text, 'text/xml');
+    
+    const trkptNodes = xml.querySelectorAll('trkpt');
+    if (trkptNodes.length === 0) return;
+
+    let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    const latLngs = [];
+
+    for (let i = 0; i < trkptNodes.length; i++) {
+      const lat = parseFloat(trkptNodes[i].getAttribute('lat'));
+      const lng = parseFloat(trkptNodes[i].getAttribute('lon'));
+      
+      latLngs.push([lat, lng]);
+
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+    }
+
+    fileCache.push({
+      name: fileHandle.name,
+      color: color,
+      bbox: { minLat, minLng, maxLat, maxLng },
+      polyline: L.polyline(latLngs, { color: color, weight: 3, opacity: 0.85 })
+    });
+  }
+
+  // 7. Viewport Filter logic (Skipped when view is frozen)
+  function updateVisibleTracks() {
+    if (isFrozen) return;
+
+    const bounds = map.getBounds();
+    const mapMinLat = bounds.getSouth();
+    const mapMaxLat = bounds.getNorth();
+    const mapMinLng = bounds.getWest();
+    const mapMaxLng = bounds.getEast();
+
+    activeLayersGroup.clearLayers();
+    const listEl = document.getElementById('file-list');
+    listEl.innerHTML = '';
+
+    fileCache.forEach(item => {
+      const isVisible = !(
+        item.bbox.maxLat < mapMinLat ||
+        item.bbox.minLat > mapMaxLat ||
+        item.bbox.maxLng < mapMinLng ||
+        item.bbox.minLng > mapMaxLng
+      );
+
+      if (isVisible) {
+        activeLayersGroup.addLayer(item.polyline);
+
+        const li = document.createElement('li');
+        
+        const swatch = document.createElement('span');
+        swatch.className = 'color-swatch';
+        swatch.style.backgroundColor = item.color;
+
+        const nameSpan = document.createElement('span');
+        nameSpan.innerText = item.name;
+
+        li.appendChild(swatch);
+        li.appendChild(nameSpan);
+        li.onclick = () => map.fitBounds(item.polyline.getBounds());
+        
+        listEl.appendChild(li);
+      }
+    });
+  }
+
+  // 8. Trigger filter on map movement
+  map.on('moveend', updateVisibleTracks);
+</script>
+
+</body>
+</html>
