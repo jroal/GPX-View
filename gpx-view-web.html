@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>GPX View Web</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="manifest" href="data:application/manifest+json,{%22name%22:%22GPX%20View%20Web%22,%22short_name%22:%22GPXView%22,%22start_url%22:%22./gpx-view-web.html%22,%22display%22:%22standalone%22,%22background_color%22:%22%23ffffff%22,%22theme_color%22:%22%230d6efd%22}">
   <style>
     body { margin: 0; padding: 0; display: flex; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
     #sidebar { width: 340px; border-right: 1px solid #ccc; display: flex; flex-direction: column; background: #fff; z-index: 1000; }
@@ -14,12 +15,14 @@
     button.active { background: #0d6efd; color: white; border-color: #0d6efd; }
     #status { font-size: 12px; color: #666; margin-top: 4px; }
     #file-list { flex: 1; overflow-y: auto; list-style: none; margin: 0; padding: 0; }
-    #file-list li { padding: 8px 12px; border-bottom: 1px solid #eee; font-size: 13px; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    #file-list li { padding: 8px 12px; border-bottom: 1px solid #eee; font-size: 13px; display: flex; align-items: center; gap: 8px; cursor: pointer; transition: background 0.15s ease; }
     #file-list li:hover { background: #f1f3f5; }
+    #file-list li.active-file { background: #0d6efd; color: white; font-weight: 600; }
     .color-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.2); }
+    #file-list li.active-file .color-swatch { border-color: #fff; }
     #map { flex: 1; height: 100%; }
   </style>
-  <!-- Place inside <head> of gpx-view-web.html -->
+<!-- Place inside <head> of gpx-view-web.html -->
 <link rel="manifest" href="data:application/manifest+json,{
   %22name%22:%22GPX%20View%20Web%22,
   %22short_name%22:%22GPXView%22,
@@ -29,6 +32,7 @@
   %22theme_color%22:%22%230d6efd%22,
   %22icons%22:[{%22src%22:%22https://leafletjs.com/docs/images/logo.png%22,%22sizes%22:%22192x192%22,%22type%22:%22image/png%22}]
 }">
+  
 </head>
 <body>
 
@@ -47,7 +51,7 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-  // 1. Tile Layers: Default (OpenStreetMap) and Satellite (Esri)
+  // 1. Map Setup & Tile Layers
   const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '© OpenStreetMap'
@@ -58,32 +62,58 @@
     attribution: 'Tiles © Esri'
   });
 
-  // 2. Initialize Map
   const map = L.map('map', {
     center: [36.1699, -115.1398],
     zoom: 10,
     layers: [osmLayer]
   });
 
-  // Add standard Leaflet layer toggle (top-right)
-  const baseMaps = {
+  L.control.layers({
     "Default Map": osmLayer,
     "Satellite View": satelliteLayer
-  };
-  L.control.layers(baseMaps).addTo(map);
+  }).addTo(map);
 
   // App State
   const fileCache = [];
   const activeLayersGroup = L.layerGroup().addTo(map);
   let isFrozen = false;
+  let selectedItem = null; // Tracks currently active track object
 
-  // 3. Color Generator: Distributes distinct hues evenly across indexed files
+  // 2. Distinct Color Generator
   function generateColor(index, total) {
     const hue = Math.floor((index * (360 / Math.max(total, 1))) % 360);
     return `hsl(${hue}, 85%, 45%)`;
   }
 
-  // 4. Freeze Toggle Button Handler
+  // 3. Highlight Logic (Selects track on map or list)
+  function selectTrack(item) {
+    // Reset previously selected track style
+    if (selectedItem) {
+      selectedItem.polyline.setStyle({ weight: 3, opacity: 0.85 });
+      if (selectedItem.listEl) {
+        selectedItem.listEl.classList.remove('active-file');
+      }
+    }
+
+    selectedItem = item;
+
+    if (item) {
+      // Highlight polyline on map
+      item.polyline.setStyle({ weight: 6, opacity: 1.0 });
+      item.polyline.bringToFront();
+
+      // Highlight sidebar entry & scroll into view
+      if (item.listEl) {
+        item.listEl.classList.add('active-file');
+        item.listEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+  }
+
+  // Click empty map area to clear selection
+  map.on('click', () => selectTrack(null));
+
+  // 4. Freeze Button Handler
   const freezeBtn = document.getElementById('btn-freeze');
   freezeBtn.addEventListener('click', () => {
     isFrozen = !isFrozen;
@@ -93,7 +123,7 @@
     } else {
       freezeBtn.classList.remove('active');
       freezeBtn.innerText = 'Freeze View';
-      updateVisibleTracks(); // Instantly sync map bounds on unfreeze
+      updateVisibleTracks();
     }
   });
 
@@ -104,6 +134,7 @@
       document.getElementById('status').innerText = 'Indexing folder...';
       fileCache.length = 0;
       activeLayersGroup.clearLayers();
+      selectedItem = null;
       isFrozen = false;
       freezeBtn.classList.remove('active');
       freezeBtn.innerText = 'Freeze View';
@@ -132,7 +163,7 @@
     }
   });
 
-  // 6. Index GPX file & store Polyline with unique color
+  // 6. Index GPX & Register Map Line Click Handler
   async function indexGpxFile(fileHandle, color) {
     const file = await fileHandle.getFile();
     const text = await file.text();
@@ -157,15 +188,26 @@
       if (lng > maxLng) maxLng = lng;
     }
 
-    fileCache.push({
+    const polyline = L.polyline(latLngs, { color: color, weight: 3, opacity: 0.85 });
+
+    const item = {
       name: fileHandle.name,
       color: color,
       bbox: { minLat, minLng, maxLat, maxLng },
-      polyline: L.polyline(latLngs, { color: color, weight: 3, opacity: 0.85 })
+      polyline: polyline,
+      listEl: null
+    };
+
+    // Map Route Click Event: Highlights list item & thickens route
+    polyline.on('click', (e) => {
+      L.DomEvent.stopPropagation(e); // Stop map click event from clearing selection
+      selectTrack(item);
     });
+
+    fileCache.push(item);
   }
 
-  // 7. Viewport Filter logic (Skipped when view is frozen)
+  // 7. Viewport Filter & Dynamic List Rendering
   function updateVisibleTracks() {
     if (isFrozen) return;
 
@@ -201,14 +243,29 @@
 
         li.appendChild(swatch);
         li.appendChild(nameSpan);
-        li.onclick = () => map.fitBounds(item.polyline.getBounds());
         
+        // Store element reference on track item
+        item.listEl = li;
+
+        // Restore highlight styling if this was already selected
+        if (selectedItem === item) {
+          li.classList.add('active-file');
+        }
+
+        // List Item Click Event: Selects track & zooms to line bounds
+        li.onclick = (e) => {
+          e.stopPropagation();
+          selectTrack(item);
+          map.fitBounds(item.polyline.getBounds(), { padding: [30, 30] });
+        };
+
         listEl.appendChild(li);
+      } else {
+        item.listEl = null;
       }
     });
   }
 
-  // 8. Trigger filter on map movement
   map.on('moveend', updateVisibleTracks);
 </script>
 
