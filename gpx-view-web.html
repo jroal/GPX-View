@@ -19,6 +19,16 @@
     .color-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.2); }
     #map { flex: 1; height: 100%; }
   </style>
+  <!-- Place inside <head> of gpx-view-web.html -->
+<link rel="manifest" href="data:application/manifest+json,{
+  %22name%22:%22GPX%20View%20Web%22,
+  %22short_name%22:%22GPXView%22,
+  %22start_url%22:%22./gpx-view-web.html%22,
+  %22display%22:%22standalone%22,
+  %22background_color%22:%22%23ffffff%22,
+  %22theme_color%22:%22%230d6efd%22,
+  %22icons%22:[{%22src%22:%22https://leafletjs.com/docs/images/logo.png%22,%22sizes%22:%22192x192%22,%22type%22:%22image/png%22}]
+}">
 </head>
 <body>
 
