@@ -144,6 +144,19 @@
     return `hsl(${hue}, 85%, 45%)`;
   }
 
+  function createTrackDetails(item) {
+    const detailsEl = document.createElement('div');
+    detailsEl.className = 'track-details';
+    detailsEl.innerHTML = `
+      <div><b>Start:</b> ${item.meta.startTime}</div>
+      <div><b>Distance:</b> ${item.meta.distance}</div>
+      <div><b>Duration:</b> ${item.meta.duration}</div>
+      <div><b>Min altitude:</b> ${item.meta.minAltitude}</div>
+      <div><b>Max altitude:</b> ${item.meta.maxAltitude}</div>
+    `;
+    return detailsEl;
+  }
+
   // 5. Highlight Track Logic
   function selectTrack(item) {
     if (selectedItem) {
@@ -163,15 +176,7 @@
 
       if (item.listEl) {
         item.listEl.classList.add('active-file');
-        
-        const detailsEl = document.createElement('div');
-        detailsEl.className = 'track-details';
-        detailsEl.innerHTML = `
-          <div><b>Start:</b> ${item.meta.startTime}</div>
-          <div><b>Distance:</b> ${item.meta.distance}</div>
-          <div><b>Duration:</b> ${item.meta.duration}</div>
-        `;
-        item.listEl.appendChild(detailsEl);
+        item.listEl.appendChild(createTrackDetails(item));
         item.listEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     }
@@ -245,6 +250,8 @@
 
     let firstTime = null;
     let lastTime = null;
+    let minAltitude = Infinity;
+    let maxAltitude = -Infinity;
 
     for (let i = 0; i < trkptNodes.length; i++) {
       const lat = parseFloat(trkptNodes[i].getAttribute('lat'));
@@ -260,6 +267,16 @@
         const prevLat = latLngs[i - 1][0];
         const prevLng = latLngs[i - 1][1];
         totalDistMiles += calculateHaversineDistance(prevLat, prevLng, lat, lng);
+      }
+
+      const elevationNode = Array.from(trkptNodes[i].children).find(child => child.localName === 'ele');
+      const elevationText = elevationNode?.textContent.trim();
+      if (elevationText) {
+        const elevation = Number(elevationText);
+        if (Number.isFinite(elevation)) {
+          minAltitude = Math.min(minAltitude, elevation);
+          maxAltitude = Math.max(maxAltitude, elevation);
+        }
       }
 
       const timeNode = trkptNodes[i].querySelector('time');
@@ -291,7 +308,9 @@
       meta: {
         distance: distanceStr,
         startTime: startTimeStr,
-        duration: durationStr
+        duration: durationStr,
+        minAltitude: minAltitude === Infinity ? "not available" : `${minAltitude.toFixed(1)} m`,
+        maxAltitude: maxAltitude === -Infinity ? "not available" : `${maxAltitude.toFixed(1)} m`
       },
       listEl: null
     };
@@ -349,14 +368,7 @@
 
         if (selectedItem === item) {
           li.classList.add('active-file');
-          const detailsEl = document.createElement('div');
-          detailsEl.className = 'track-details';
-          detailsEl.innerHTML = `
-            <div><b>Start:</b> ${item.meta.startTime}</div>
-            <div><b>Distance:</b> ${item.meta.distance}</div>
-            <div><b>Duration:</b> ${item.meta.duration}</div>
-          `;
-          li.appendChild(detailsEl);
+          li.appendChild(createTrackDetails(item));
         }
 
         li.onclick = (e) => {
