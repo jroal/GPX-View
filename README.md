@@ -1,4 +1,4 @@
-This project is a simple Windows utility to view a folder on the local PC with multiple GPX files at once and view them on a map. 
+This project is a simple Windows utility to view a folder on the local PC with multiple GPX files at once and view them on a map. I developed a basic Windows application but later focused on the web app. If you don't have a Windows PC, or you just prefer a simple web app, use this web version: [https://jroal.github.io/GPX-View/gpx-view-web.html](https://jroal.github.io/GPX-View/gpx-view-web.html). The web app has more features, works better, and installation is an option.
 
 <img alt="image" src="https://github.com/user-attachments/assets/3a439cb6-29cd-49d8-9b8b-f27fdb575678" />
 
@@ -10,4 +10,4 @@ Project website: [https://jroal.github.io/GPX-View/](https://jroal.github.io/GPX
 
 Video demo: [https://youtu.be/Ul8_T19j_QU](https://youtu.be/Ul8_T19j_QU)
 
-If you don't have a Windows PC, or you just prefer a simple web app, use this web version: [https://jroal.github.io/GPX-View/gpx-view-web.html](https://jroal.github.io/GPX-View/gpx-view-web.html)
+
