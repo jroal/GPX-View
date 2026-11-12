@@ -14,9 +14,11 @@
     #sidebar { width: 350px; border-right: 1px solid #ccc; display: flex; flex-direction: column; background: #fff; z-index: 1000; }
     #controls { padding: 12px; background: #f8f9fa; border-bottom: 1px solid #ddd; }
     .btn-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .units-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
     button { flex: 1; padding: 8px 12px; font-weight: 600; font-size: 13px; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: #fff; }
     button:hover { background: #e9ecef; }
     button.active { background: #0d6efd; color: white; border-color: #0d6efd; }
+    #units { flex: 1; padding: 7px 8px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; background: #fff; }
     #btn-install { background: #198754; color: white; border-color: #198754; display: none; }
     #btn-install:hover { background: #157347; }
     #status { font-size: 12px; color: #666; margin-top: 4px; }
@@ -42,6 +44,13 @@
     </div>
     <div class="btn-row">
       <button id="btn-install">⚡ Install App</button>
+    </div>
+    <div class="units-row">
+      <label for="units">Units</label>
+      <select id="units">
+        <option value="english">English</option>
+        <option value="metric">Metric</option>
+      </select>
     </div>
     <div id="status">No folder loaded</div>
   </div>
@@ -113,6 +122,7 @@
   const activeLayersGroup = L.layerGroup().addTo(map);
   let isFrozen = false;
   let selectedItem = null;
+  let units = 'english';
 
   // 3. Distance & Time Calculations
   function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
@@ -149,13 +159,33 @@
     detailsEl.className = 'track-details';
     detailsEl.innerHTML = `
       <div><b>Start:</b> ${item.meta.startTime}</div>
-      <div><b>Distance:</b> ${item.meta.distance}</div>
+      <div><b>Distance:</b> ${formatDistance(item.meta.distanceMiles)}</div>
       <div><b>Duration:</b> ${item.meta.duration}</div>
-      <div><b>Min altitude:</b> ${item.meta.minAltitude}</div>
-      <div><b>Max altitude:</b> ${item.meta.maxAltitude}</div>
+      <div><b>Min altitude:</b> ${formatAltitude(item.meta.minAltitudeMeters)}</div>
+      <div><b>Max altitude:</b> ${formatAltitude(item.meta.maxAltitudeMeters)}</div>
     `;
     return detailsEl;
   }
+
+  function formatDistance(miles) {
+    if (!(miles > 0)) return 'not available';
+    if (units === 'metric') return `${(miles * 1.609344).toFixed(2)} km`;
+    return `${miles.toFixed(2)} mi`;
+  }
+
+  function formatAltitude(meters) {
+    if (!Number.isFinite(meters)) return 'not available';
+    if (units === 'metric') return `${meters.toFixed(1)} m`;
+    return `${(meters * 3.28084).toFixed(1)} ft`;
+  }
+
+  document.getElementById('units').addEventListener('change', (event) => {
+    units = event.target.value;
+    if (selectedItem?.listEl) {
+      const details = selectedItem.listEl.querySelector('.track-details');
+      if (details) details.replaceWith(createTrackDetails(selectedItem));
+    }
+  });
 
   // 5. Highlight Track Logic
   function selectTrack(item) {
@@ -289,7 +319,6 @@
       }
     }
 
-    const distanceStr = totalDistMiles > 0 ? `${totalDistMiles.toFixed(2)} mi` : "not available";
     const startTimeStr = firstTime ? firstTime.toLocaleString() : "not available";
     let durationStr = "not available";
 
@@ -306,11 +335,11 @@
       bbox: { minLat, minLng, maxLat, maxLng },
       polyline: polyline,
       meta: {
-        distance: distanceStr,
+        distanceMiles: totalDistMiles,
         startTime: startTimeStr,
         duration: durationStr,
-        minAltitude: minAltitude === Infinity ? "not available" : `${minAltitude.toFixed(1)} m`,
-        maxAltitude: maxAltitude === -Infinity ? "not available" : `${maxAltitude.toFixed(1)} m`
+        minAltitudeMeters: minAltitude,
+        maxAltitudeMeters: maxAltitude
       },
       listEl: null
     };
